@@ -1,5 +1,2 @@
 tensorflow==2.13.0
 streamlit
-numpy
-Pillow
-gdown
