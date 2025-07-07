@@ -1,5 +1,6 @@
 streamlit==1.26.0
-tensorflow-cpu==2.13.0
+tensorflow==2.13.0
+gdown
 numpy
 matplotlib
 pillow
