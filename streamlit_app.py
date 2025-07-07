@@ -4,6 +4,7 @@ import tensorflow as tf
 import streamlit as st
 from PIL import Image
 import gdown
+import matplotlib.pyplot as plt
 
 # Google Drive file ID
 drive_url = "https://drive.google.com/uc?id=1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj"
