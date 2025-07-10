@@ -3,10 +3,8 @@ import requests
 from io import BytesIO
 import joblib
 import time
-import re
-import os
-from PIL import Image
 import numpy as np
+from PIL import Image
 
 # Set page configuration
 st.set_page_config(
@@ -40,47 +38,24 @@ st.markdown("""
     padding: 15px;
     margin: 15px 0;
 }
+.prediction-card {
+    background-color: #f0f8ff;
+    border-radius: 10px;
+    padding: 20px;
+    margin-top: 20px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ===== CONFIGURATION =====
-# User instructions - MUST REPLACE THIS LINK
-st.markdown('<h1 class="header">🌸 Flower Classification App</h1>', unsafe_allow_html=True)
-st.markdown("---")
-
-# Placeholder for user to input their Google Drive link
-drive_link = st.text_input(
-    "**Enter your Google Drive shareable link**",
-    value="https://drive.google.com/file/d/YOUR_FILE_ID/view?usp=sharing",
-    help="Right-click your file in Google Drive and select 'Get link'"
-)
-
-# Automatically extract file ID
-def extract_file_id(url):
-    """Extract file ID from Google Drive link"""
-    patterns = [
-        r"/file/d/([a-zA-Z0-9_-]+)",
-        r"id=([a-zA-Z0-9_-]+)",
-        r"open\?id=([a-zA-Z0-9_-]+)"
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    
-    st.error("❌ Could not extract file ID from URL")
-    return None
-
-FILE_ID = extract_file_id(drive_link)
+# Your actual Google Drive file ID
+FILE_ID = "1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj"
 
 # Display file info
-if FILE_ID and "YOUR_FILE" not in FILE_ID:
-    st.success(f"✅ Detected File ID: `{FILE_ID}`")
-    st.markdown(f"**Test your download link:** [Direct Download](https://drive.google.com/uc?export=download&id={FILE_ID})")
-else:
-    st.error("❌ Please enter a valid Google Drive link")
-    st.stop()
+st.markdown('<h1 class="header">🌸 Flower Classification App</h1>', unsafe_allow_html=True)
+st.markdown("---")
+st.info(f"**Using model from Google Drive file ID:** `{FILE_ID}`")
+st.markdown(f"**Download link:** [https://drive.google.com/uc?export=download&id={FILE_ID}](https://drive.google.com/uc?export=download&id={FILE_ID})")
 
 # ===== DOWNLOAD VERIFICATION =====
 def verify_download_link(file_id):
@@ -100,7 +75,7 @@ def verify_download_link(file_id):
         st.error(f"❌ Connection failed: {str(e)}")
         return False
 
-# Verify the link before showing download button
+# Verify the link
 if not verify_download_link(FILE_ID):
     st.markdown("""
     <div class="troubleshoot">
@@ -210,7 +185,7 @@ def preprocess_image(uploaded_file):
     """Convert uploaded file to model input format"""
     try:
         image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", width=300)
+        st.image(image, caption="Uploaded Image", use_column_width=True)
         
         # Basic preprocessing - MODIFY FOR YOUR MODEL
         image = image.resize((224, 224))  # Standard size for many models
@@ -222,52 +197,62 @@ def preprocess_image(uploaded_file):
         return None
 
 # ===== MAIN APP =====
-if FILE_ID:
-    # Initialize model
-    if 'model' not in st.session_state:
+# Initialize model
+if 'model' not in st.session_state:
+    with st.spinner("⚙️ Initializing model..."):
         model = load_model()
         if model:
             st.session_state.model = model
         else:
             st.error("❌ Model failed to load. Please check the errors above.")
             st.stop()
+
+st.markdown("---")
+st.subheader("🌼 Flower Classification")
+
+# File uploader
+uploaded_file = st.file_uploader("Upload a flower image", type=["jpg", "jpeg", "png"])
+
+if uploaded_file:
+    # Process image
+    processed_image = preprocess_image(uploaded_file)
     
-    st.markdown("---")
-    st.subheader("🌼 Flower Classification")
-    
-    # File uploader
-    uploaded_file = st.file_uploader("Upload a flower image", type=["jpg", "jpeg", "png"])
-    
-    if uploaded_file:
-        # Process image
-        processed_image = preprocess_image(uploaded_file)
-        
-        if processed_image is not None:
-            # Make prediction
-            with st.spinner("🔍 Analyzing flower..."):
-                try:
-                    # This will vary based on your model - example for classification
-                    prediction = st.session_state.model.predict(processed_image)
-                    class_idx = np.argmax(prediction)
-                    
-                    # Sample flower classes - REPLACE WITH YOUR CLASSES
-                    FLOWER_CLASSES = [
-                        "Rose", "Tulip", "Daisy", "Sunflower", "Lily",
-                        "Orchid", "Peony", "Hydrangea", "Daffodil", "Carnation"
-                    ]
-                    
-                    st.subheader(f"Prediction: **{FLOWER_CLASSES[class_idx]}**")
-                    st.metric("Confidence", f"{prediction[0][class_idx]*100:.2f}%")
-                    
-                except Exception as e:
-                    st.error(f"❌ Prediction failed: {str(e)}")
-                    st.info("Ensure your model expects the same input format used in preprocessing")
+    if processed_image is not None:
+        # Make prediction
+        with st.spinner("🔍 Analyzing flower..."):
+            try:
+                # This will vary based on your model - example for classification
+                prediction = st.session_state.model.predict(processed_image)
+                class_idx = np.argmax(prediction)
+                
+                # Sample flower classes - REPLACE WITH YOUR ACTUAL CLASSES
+                FLOWER_CLASSES = [
+                    "Rose", "Tulip", "Daisy", "Sunflower", "Lily",
+                    "Orchid", "Peony", "Hydrangea", "Daffodil", "Carnation"
+                ]
+                
+                # Create prediction card
+                st.markdown('<div class="prediction-card">', unsafe_allow_html=True)
+                st.subheader(f"Prediction: **{FLOWER_CLASSES[class_idx]}**")
+                
+                # Confidence meter
+                confidence = prediction[0][class_idx] * 100
+                st.metric("Confidence", f"{confidence:.2f}%")
+                
+                # Confidence bar
+                st.progress(int(confidence))
+                
+                st.markdown('</div>', unsafe_allow_html=True)
+                
+            except Exception as e:
+                st.error(f"❌ Prediction failed: {str(e)}")
+                st.info("Ensure your model expects the same input format used in preprocessing")
 
 # Add footer
 st.markdown("---")
 st.markdown("### Troubleshooting Tips")
 st.markdown("""
-1. **Invalid file ID** - Make sure you've entered the complete Google Drive link
+1. **Invalid file ID** - Make sure the file ID is correct and the file exists on Google Drive
 2. **Sharing settings** - Ensure file is set to "Anyone with the link can view"
 3. **File format** - Confirm your model is in .pkl, .joblib, or compatible format
 4. **File size** - For files >500MB, consider using cloud storage (AWS S3, Google Cloud)
