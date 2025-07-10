@@ -1,9 +1,6 @@
+# requirements.txt
 streamlit==1.29.0
 requests==2.31.0
 joblib==1.3.2
-# Add your ML framework below:
-scikit-learn==1.3.0
-# OR
-torch==2.1.0
-# OR
-tensorflow==2.15.0
+numpy==1.26.0
+Pillow==10.0.0
