@@ -5,6 +5,7 @@ import joblib
 import time
 import numpy as np
 from PIL import Image
+import sys
 
 # Set page configuration
 st.set_page_config(
@@ -44,6 +45,13 @@ st.markdown("""
     padding: 20px;
     margin-top: 20px;
 }
+.error-section {
+    background-color: #ffebee;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+    border: 1px solid #ffcdd2;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -57,49 +65,16 @@ st.markdown("---")
 st.info(f"**Using model from Google Drive file ID:** `{FILE_ID}`")
 st.markdown(f"**Download link:** [https://drive.google.com/uc?export=download&id={FILE_ID}](https://drive.google.com/uc?export=download&id={FILE_ID})")
 
-# ===== DOWNLOAD VERIFICATION =====
-def verify_download_link(file_id):
-    """Check if download link is valid before proceeding"""
-    test_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    try:
-        response = requests.head(test_url, allow_redirects=True)
-        if response.status_code == 200:
-            return True
-        elif response.status_code == 404:
-            st.error(f"❌ File not found (404 Error) for ID: {file_id}")
-            return False
-        else:
-            st.error(f"❌ Server returned status: {response.status_code}")
-            return False
-    except Exception as e:
-        st.error(f"❌ Connection failed: {str(e)}")
-        return False
-
-# Verify the link
-if not verify_download_link(FILE_ID):
-    st.markdown("""
-    <div class="troubleshoot">
-    <h3>🔧 Troubleshooting Guide</h3>
-    <ol>
-        <li><span class="step">Verify your file ID</span> - Make sure it matches the ID in your Google Drive URL</li>
-        <li><span class="step">Check sharing settings</span> - Ensure file is set to "Anyone with the link"</li>
-        <li><span class="step">Test the link</span> - <a href="https://drive.google.com/uc?export=download&id={FILE_ID}" target="_blank">Click here</a> to test download in browser</li>
-        <li><span class="step">File size limits</span> - If file >500MB, compress it or use cloud storage</li>
-        <li><span class="step">Check file status</span> - Ensure file hasn't been deleted or moved</li>
-    </ol>
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
-
 # ===== ROBUST DOWNLOAD FUNCTION =====
 def download_model():
     """Download model with proper Google Drive handling"""
     try:
         URL = f"https://drive.google.com/uc?export=download&id={FILE_ID}"
         session = requests.Session()
+        session.headers.update({'User-Agent': 'Mozilla/5.0'})
         
         # First request to get confirmation token
-        response = session.get(URL, stream=True)
+        response = session.get(URL, stream=True, timeout=30)
         response.raise_for_status()
         
         # Find confirmation token in cookies
@@ -112,77 +87,109 @@ def download_model():
         # Second request with confirmation token
         if token:
             params = {'id': FILE_ID, 'confirm': token}
-            response = session.get(URL, params=params, stream=True)
+            response = session.get(URL, params=params, stream=True, timeout=30)
             response.raise_for_status()
         
+        # Check if we actually got a file
+        if 'content-length' not in response.headers:
+            st.error("❌ No content length in response headers")
+            return None
+            
         return response
         
     except requests.exceptions.HTTPError as e:
-        st.error(f"🚨 HTTP Error: {e.response.status_code}")
-        if e.response.status_code == 404:
-            st.error(f"File not found. Verify your file ID: {FILE_ID}")
-        elif e.response.status_code == 403:
-            st.error("Permission denied. Ensure sharing is set to 'Anyone with the link'")
+        st.error(f"🚨 HTTP Error: {e.response.status_code if e.response else 'No response'}")
+        if e.response:
+            if e.response.status_code == 404:
+                st.error(f"File not found. Verify your file ID: {FILE_ID}")
+            elif e.response.status_code == 403:
+                st.error("Permission denied. Ensure sharing is set to 'Anyone with the link'")
+        return None
+    except requests.exceptions.RequestException as e:
+        st.error(f"🚨 Network error: {str(e)}")
         return None
     except Exception as e:
-        st.error(f"🚨 Download failed: {str(e)}")
+        st.error(f"🚨 Unexpected download error: {str(e)}")
         return None
 
 # ===== MODEL LOADING =====
 def load_model():
-    """Load model with progress tracking"""
-    st.markdown('<div class="download-section">', unsafe_allow_html=True)
-    st.subheader("📥 Downloading Model")
-    
-    # Start download
-    response = download_model()
-    if response is None:
-        return None
-        
-    total_size = int(response.headers.get('content-length', 0))
-    downloaded = 0
-    file_bytes = BytesIO()
-    
-    # Create progress elements
-    progress_bar = st.progress(0)
-    status = st.empty()
-    status.text("Starting download...")
-    
-    # Stream download with progress
-    start_time = time.time()
-    for chunk in response.iter_content(chunk_size=32768):
-        if chunk:
-            file_bytes.write(chunk)
-            downloaded += len(chunk)
-            
-            # Update progress
-            if (time.time() - start_time) > 0.3:
-                progress = min(downloaded / total_size, 1.0)
-                progress_bar.progress(progress)
-                mb_downloaded = downloaded / (1024 * 1024)
-                total_mb = total_size / (1024 * 1024)
-                status.text(f"Downloaded: {mb_downloaded:.1f}MB / {total_mb:.1f}MB")
-                start_time = time.time()
-    
-    # Final update
-    progress_bar.progress(1.0)
-    status.text(f"✅ Download complete! Size: {total_mb:.1f}MB")
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Load model
-    file_bytes.seek(0)
+    """Load model with robust progress tracking and error handling"""
     try:
-        model = joblib.load(file_bytes)
-        st.success("✅ Model loaded successfully!")
-        return model
+        st.markdown('<div class="download-section">', unsafe_allow_html=True)
+        st.subheader("📥 Downloading Model")
+        
+        # Start download
+        response = download_model()
+        if response is None:
+            return None
+            
+        total_size = int(response.headers.get('content-length', 0))
+        downloaded = 0
+        file_bytes = BytesIO()
+        
+        # Initialize variables to prevent UnboundLocalError
+        total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
+        progress = 0
+        
+        # Create progress elements
+        progress_bar = st.progress(0)
+        status = st.empty()
+        status.text("Starting download...")
+        
+        # Stream download with progress
+        start_time = time.time()
+        for chunk in response.iter_content(chunk_size=32768):
+            if chunk:
+                file_bytes.write(chunk)
+                downloaded += len(chunk)
+                
+                # Update progress
+                if total_size > 0:
+                    progress = min(downloaded / total_size, 1.0)
+                    progress_bar.progress(progress)
+                    
+                    # Update status every 0.3 seconds
+                    if (time.time() - start_time) > 0.3:
+                        mb_downloaded = downloaded / (1024 * 1024)
+                        status.text(f"Downloaded: {mb_downloaded:.1f}MB / {total_mb:.1f}MB")
+                        start_time = time.time()
+        
+        # Final update - ensure variables are defined
+        progress_bar.progress(1.0)
+        status.text(f"✅ Download complete! Size: {total_mb:.1f}MB")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Load model
+        file_bytes.seek(0)
+        try:
+            model = joblib.load(file_bytes)
+            st.success("✅ Model loaded successfully!")
+            return model
+        except Exception as e:
+            st.error(f"❌ Model loading failed: {str(e)}")
+            st.info("This usually means the file is corrupted, in the wrong format, or requires specific dependencies")
+            # Display detailed error info for debugging
+            st.markdown('<div class="error-section">', unsafe_allow_html=True)
+            st.subheader("🛠️ Debug Information")
+            st.code(f"Error type: {type(e).__name__}\nError details: {str(e)}", language="python")
+            st.markdown("""
+            **Possible Solutions:**
+            1. Verify the model file format matches what joblib expects
+            2. Check if all required dependencies are installed
+            3. Test loading the model locally with the same environment
+            4. Re-export the model with the correct serialization method
+            """)
+            st.markdown('</div>', unsafe_allow_html=True)
+            return None
+            
     except Exception as e:
-        st.error(f"❌ Model loading failed: {str(e)}")
-        st.info("This usually means the file is corrupted or in the wrong format")
+        st.error(f"❌ Critical error during model loading: {str(e)}")
         return None
 
 # ===== IMAGE PROCESSING =====
 def preprocess_image(uploaded_file):
-    """Convert uploaded file to model input format"""
+    """Convert uploaded file to model input format with error handling"""
     try:
         image = Image.open(uploaded_file)
         st.image(image, caption="Uploaded Image", use_column_width=True)
@@ -205,6 +212,18 @@ if 'model' not in st.session_state:
             st.session_state.model = model
         else:
             st.error("❌ Model failed to load. Please check the errors above.")
+            st.markdown("""
+            <div class="troubleshoot">
+            <h3>🔧 Advanced Troubleshooting</h3>
+            <ol>
+                <li><span class="step">Test the download link</span> - <a href="https://drive.google.com/uc?export=download&id={FILE_ID}" target="_blank">Click here</a> to test download in browser</li>
+                <li><span class="step">Check file size</span> - The file should be larger than 0 bytes</li>
+                <li><span class="step">Verify file format</span> - Ensure it's a valid joblib file</li>
+                <li><span class="step">Library compatibility</span> - Match library versions between training and deployment</li>
+                <li><span class="step">Local testing</span> - Try loading the model in a local Python environment</li>
+            </ol>
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
 
 st.markdown("---")
@@ -252,9 +271,9 @@ if uploaded_file:
 st.markdown("---")
 st.markdown("### Troubleshooting Tips")
 st.markdown("""
-1. **Invalid file ID** - Make sure the file ID is correct and the file exists on Google Drive
+1. **Download issues** - [Test this download link](https://drive.google.com/uc?export=download&id=1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj) directly in your browser
 2. **Sharing settings** - Ensure file is set to "Anyone with the link can view"
 3. **File format** - Confirm your model is in .pkl, .joblib, or compatible format
-4. **File size** - For files >500MB, consider using cloud storage (AWS S3, Google Cloud)
-5. **Model compatibility** - Verify your model was trained with the same library versions
+4. **File size** - The file should be >1MB (if it's too small, it might be corrupted)
+5. **Model compatibility** - Verify your model was trained with joblib-compatible libraries
 """)
