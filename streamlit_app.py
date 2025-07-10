@@ -1,11 +1,12 @@
 import streamlit as st
 import requests
 from io import BytesIO
-import joblib
 import time
 import numpy as np
 from PIL import Image
-import sys
+import os
+import tempfile
+import h5py
 
 # Set page configuration
 st.set_page_config(
@@ -74,7 +75,7 @@ def download_model():
         session.headers.update({'User-Agent': 'Mozilla/5.0'})
         
         # First request to get confirmation token
-        response = session.get(URL, stream=True, timeout=30)
+        response = session.get(URL, stream=True, timeout=60)
         response.raise_for_status()
         
         # Find confirmation token in cookies
@@ -87,7 +88,7 @@ def download_model():
         # Second request with confirmation token
         if token:
             params = {'id': FILE_ID, 'confirm': token}
-            response = session.get(URL, params=params, stream=True, timeout=30)
+            response = session.get(URL, params=params, stream=True, timeout=60)
             response.raise_for_status()
         
         # Check if we actually got a file
@@ -95,7 +96,7 @@ def download_model():
             st.error("❌ No content length in response headers")
             return None
             
-        return response
+        return response.content  # Return the content directly
         
     except requests.exceptions.HTTPError as e:
         st.error(f"🚨 HTTP Error: {e.response.status_code if e.response else 'No response'}")
@@ -113,78 +114,106 @@ def download_model():
         return None
 
 # ===== MODEL LOADING =====
-def load_model():
-    """Load model with robust progress tracking and error handling"""
+def load_model(model_bytes):
+    """Load model from bytes with format detection"""
+    try:
+        # Try loading as Keras model
+        try:
+            st.info("Attempting to load as Keras model...")
+            from tensorflow.keras.models import load_model as load_keras_model
+            
+            # Save bytes to temporary file
+            with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as tmp_file:
+                tmp_file.write(model_bytes)
+                tmp_file_path = tmp_file.name
+            
+            model = load_keras_model(tmp_file_path)
+            os.unlink(tmp_file_path)  # Delete temp file
+            st.success("✅ Successfully loaded as Keras model!")
+            return model
+        except Exception as keras_error:
+            st.warning(f"⚠️ Keras loading failed: {str(keras_error)[:100]}...")
+        
+        # Try loading as joblib model
+        try:
+            st.info("Attempting to load as joblib model...")
+            import joblib
+            model = joblib.load(BytesIO(model_bytes))
+            st.success("✅ Successfully loaded as joblib model!")
+            return model
+        except Exception as joblib_error:
+            st.warning(f"⚠️ Joblib loading failed: {str(joblib_error)[:100]}...")
+        
+        # Try loading as PyTorch model
+        try:
+            st.info("Attempting to load as PyTorch model...")
+            import torch
+            model = torch.load(BytesIO(model_bytes))
+            st.success("✅ Successfully loaded as PyTorch model!")
+            return model
+        except Exception as torch_error:
+            st.warning(f"⚠️ PyTorch loading failed: {str(torch_error)[:100]}...")
+        
+        # If all fail
+        st.error("❌ Failed to load model with any supported format")
+        st.markdown('<div class="error-section">', unsafe_allow_html=True)
+        st.subheader("🛠️ Debug Information")
+        st.markdown("""
+        **Possible Solutions:**
+        1. Verify the model file format:
+           - Keras models should be .h5 or .keras files
+           - Joblib models should be .pkl or .joblib files
+           - PyTorch models should be .pt or .pth files
+        2. Check the file signature:
+           - HDF5 files start with `\x89HDF`
+           - Joblib files start with `\\x80\\x04\\x95`
+        3. Ensure all dependencies are installed:
+           ```python
+           pip install tensorflow joblib torch
+           ```
+        """)
+        
+        # Display file signature
+        if len(model_bytes) > 8:
+            st.code(f"File signature: {model_bytes[:8]}", language="python")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        return None
+            
+    except Exception as e:
+        st.error(f"❌ Critical error during model loading: {str(e)}")
+        return None
+
+# ===== MODEL DOWNLOAD AND LOADING PROCESS =====
+def download_and_load_model():
+    """Handle the complete download and loading process"""
     try:
         st.markdown('<div class="download-section">', unsafe_allow_html=True)
         st.subheader("📥 Downloading Model")
         
         # Start download
-        response = download_model()
-        if response is None:
+        model_bytes = download_model()
+        if model_bytes is None:
             return None
             
-        total_size = int(response.headers.get('content-length', 0))
-        downloaded = 0
-        file_bytes = BytesIO()
-        
-        # Initialize variables to prevent UnboundLocalError
-        total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
-        progress = 0
-        
-        # Create progress elements
-        progress_bar = st.progress(0)
-        status = st.empty()
-        status.text("Starting download...")
-        
-        # Stream download with progress
-        start_time = time.time()
-        for chunk in response.iter_content(chunk_size=32768):
-            if chunk:
-                file_bytes.write(chunk)
-                downloaded += len(chunk)
-                
-                # Update progress
-                if total_size > 0:
-                    progress = min(downloaded / total_size, 1.0)
-                    progress_bar.progress(progress)
-                    
-                    # Update status every 0.3 seconds
-                    if (time.time() - start_time) > 0.3:
-                        mb_downloaded = downloaded / (1024 * 1024)
-                        status.text(f"Downloaded: {mb_downloaded:.1f}MB / {total_mb:.1f}MB")
-                        start_time = time.time()
-        
-        # Final update - ensure variables are defined
-        progress_bar.progress(1.0)
-        status.text(f"✅ Download complete! Size: {total_mb:.1f}MB")
+        # Display download info
+        total_size = len(model_bytes)
+        total_mb = total_size / (1024 * 1024)
+        st.success(f"✅ Download complete! Size: {total_mb:.1f}MB")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Load model
-        file_bytes.seek(0)
-        try:
-            model = joblib.load(file_bytes)
+        with st.spinner("🔍 Detecting model format..."):
+            model = load_model(model_bytes)
+            
+        if model:
             st.success("✅ Model loaded successfully!")
             return model
-        except Exception as e:
-            st.error(f"❌ Model loading failed: {str(e)}")
-            st.info("This usually means the file is corrupted, in the wrong format, or requires specific dependencies")
-            # Display detailed error info for debugging
-            st.markdown('<div class="error-section">', unsafe_allow_html=True)
-            st.subheader("🛠️ Debug Information")
-            st.code(f"Error type: {type(e).__name__}\nError details: {str(e)}", language="python")
-            st.markdown("""
-            **Possible Solutions:**
-            1. Verify the model file format matches what joblib expects
-            2. Check if all required dependencies are installed
-            3. Test loading the model locally with the same environment
-            4. Re-export the model with the correct serialization method
-            """)
-            st.markdown('</div>', unsafe_allow_html=True)
+        else:
             return None
             
     except Exception as e:
-        st.error(f"❌ Critical error during model loading: {str(e)}")
+        st.error(f"❌ Error in download/load process: {str(e)}")
         return None
 
 # ===== IMAGE PROCESSING =====
@@ -207,7 +236,7 @@ def preprocess_image(uploaded_file):
 # Initialize model
 if 'model' not in st.session_state:
     with st.spinner("⚙️ Initializing model..."):
-        model = load_model()
+        model = download_and_load_model()
         if model:
             st.session_state.model = model
         else:
@@ -217,10 +246,12 @@ if 'model' not in st.session_state:
             <h3>🔧 Advanced Troubleshooting</h3>
             <ol>
                 <li><span class="step">Test the download link</span> - <a href="https://drive.google.com/uc?export=download&id={FILE_ID}" target="_blank">Click here</a> to test download in browser</li>
-                <li><span class="step">Check file size</span> - The file should be larger than 0 bytes</li>
-                <li><span class="step">Verify file format</span> - Ensure it's a valid joblib file</li>
-                <li><span class="step">Library compatibility</span> - Match library versions between training and deployment</li>
+                <li><span class="step">Check file format</span> - The file should be a Keras (.h5), joblib, or PyTorch model</li>
+                <li><span class="step">Library compatibility</span> - Install required packages: 
+                    <code>pip install tensorflow joblib torch</code>
+                </li>
                 <li><span class="step">Local testing</span> - Try loading the model in a local Python environment</li>
+                <li><span class="step">File inspection</span> - Check the first few bytes of the file for format signature</li>
             </ol>
             </div>
             """, unsafe_allow_html=True)
@@ -240,9 +271,36 @@ if uploaded_file:
         # Make prediction
         with st.spinner("🔍 Analyzing flower..."):
             try:
-                # This will vary based on your model - example for classification
-                prediction = st.session_state.model.predict(processed_image)
-                class_idx = np.argmax(prediction)
+                # Try different prediction methods based on model type
+                model = st.session_state.model
+                
+                # If Keras model
+                if hasattr(model, "predict"):
+                    prediction = model.predict(processed_image)
+                    class_idx = np.argmax(prediction[0])
+                    confidence = prediction[0][class_idx] * 100
+                
+                # If scikit-learn model
+                elif hasattr(model, "predict_proba"):
+                    # Reshape for sklearn models
+                    processed_image = processed_image.reshape(1, -1)
+                    prediction = model.predict_proba(processed_image)
+                    class_idx = np.argmax(prediction[0])
+                    confidence = prediction[0][class_idx] * 100
+                
+                # If PyTorch model
+                elif hasattr(model, "forward"):
+                    import torch
+                    input_tensor = torch.from_numpy(processed_image).float()
+                    with torch.no_grad():
+                        output = model(input_tensor)
+                    prediction = torch.nn.functional.softmax(output[0], dim=0)
+                    class_idx = torch.argmax(prediction).item()
+                    confidence = prediction[class_idx].item() * 100
+                
+                else:
+                    st.error("❌ Unsupported model type for prediction")
+                    st.stop()
                 
                 # Sample flower classes - REPLACE WITH YOUR ACTUAL CLASSES
                 FLOWER_CLASSES = [
@@ -255,7 +313,6 @@ if uploaded_file:
                 st.subheader(f"Prediction: **{FLOWER_CLASSES[class_idx]}**")
                 
                 # Confidence meter
-                confidence = prediction[0][class_idx] * 100
                 st.metric("Confidence", f"{confidence:.2f}%")
                 
                 # Confidence bar
@@ -269,11 +326,14 @@ if uploaded_file:
 
 # Add footer
 st.markdown("---")
+st.markdown("### Requirements")
+st.code("pip install streamlit requests numpy Pillow tensorflow joblib torch", language="bash")
+
 st.markdown("### Troubleshooting Tips")
 st.markdown("""
-1. **Download issues** - [Test this download link](https://drive.google.com/uc?export=download&id=1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj) directly in your browser
-2. **Sharing settings** - Ensure file is set to "Anyone with the link can view"
-3. **File format** - Confirm your model is in .pkl, .joblib, or compatible format
-4. **File size** - The file should be >1MB (if it's too small, it might be corrupted)
-5. **Model compatibility** - Verify your model was trained with joblib-compatible libraries
-""")
+1. **Install all dependencies** - The app requires TensorFlow for Keras models
+2. **Verify model format** - Your model is likely a Keras .h5 file
+3. **Test locally** - Try loading the model with:
+   ```python
+   from tensorflow.keras.models import load_model
+   model = load_model('your_model.h5')
