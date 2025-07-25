@@ -58,7 +58,7 @@ st.markdown("""
 
 # ===== CONFIGURATION =====
 # Your actual Google Drive file ID
-FILE_ID = "1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj"
+FILE_ID = "https://drive.google.com/file/d/1yu3dZ77n_rJShBRRcsg_kjMOKGJ67Sqj/view?usp=sharing"
 
 # Display file info
 st.markdown('<h1 class="header">🌸 Flower Classification App</h1>', unsafe_allow_html=True)
