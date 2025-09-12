@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 import json
 from PIL import Image
+from tensorflow.keras.applications import MobileNetV2
 
 # === CONFIGURATION ===
 MODEL_NAME = "mobilenetv2_model.keras"
@@ -10,9 +11,14 @@ CLASS_FILE = "class_names.json"
 IMG_SIZE = 180
 
 # === Load Model & Classes ===
+
 @st.cache_resource
 def load_model():
-    return tf.keras.models.load_model(MODEL_NAME)
+    return tf.keras.models.load_model(
+        MODEL_NAME,
+        custom_objects={"MobileNetV2": MobileNetV2}
+    )
+
 
 model = load_model()
 
