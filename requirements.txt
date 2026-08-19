@@ -1,5 +1,4 @@
 tensorflow
-python==3.11
 streamlit
 pillow
 numpy
