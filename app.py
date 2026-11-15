@@ -17,6 +17,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
+# Explicitly initialize global variables to prevent any NameError scope issues
+model = None
+class_names = None
+load_error = None
+
 
 @st.cache_resource
 def load_model_and_classes():
@@ -25,32 +30,35 @@ def load_model_and_classes():
       return None, None, "Model or class files missing from directory."
     
     with open(CLASS_PATH, "r") as f:
-      class_names = json.load(f)
+      loaded_classes = json.load(f)
       
-    num_classes = len(class_names)
+    num_classes = len(loaded_classes)
 
-    # 1. Rebuild the Sequential architecture
+    # 1. Rebuild the Sequential architecture matching local training
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(224, 224, 3), 
         include_top=False, 
         weights=None
     )
     
-    model = tf.keras.Sequential([
+    net = tf.keras.Sequential([
         base_model,
         tf.keras.layers.GlobalAveragePooling2D(),
         tf.keras.layers.Dense(num_classes, activation="softmax")
     ])
 
-    # 2. CRITICAL: Explicitly build the model so all layer variables are created in memory
-    model.build((None, 224, 224, 3))
-
-    # 3. Load the weights successfully
-    model.load_weights(MODEL_PATH)
+    # 2. Build model and load weights
+    net.build((None, 224, 224, 3))
+    net.load_weights(MODEL_PATH)
     
-    return model, class_names, None
+    return net, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
+
+
+# Unpack loader results at the top global level
+model, class_names, load_error = load_model_and_classes()
+
 # Sidebar - Groq API Key Configuration
 st.sidebar.title("🌿 Agent Configuration")
 st.sidebar.markdown(
