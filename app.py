@@ -1,9 +1,6 @@
 import json
 import os
 import tensorflow as tf
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
-from tensorflow.keras.models import Model
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import numpy as np
 from PIL import Image
@@ -15,6 +12,7 @@ st.set_page_config(
     page_title="Botanical AI & Flower Classifier", page_icon="🌸", layout="centered"
 )
 
+# Robust absolute path resolution for cloud deployment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
@@ -22,16 +20,22 @@ CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 @st.cache_resource
 def load_model_and_classes():
-  if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
-    return None, None
-  
-  # Load the full .keras model container directly
-  model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-  
-  with open(CLASS_PATH, "r") as f:
-    class_names = json.load(f)
+  try:
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
+      return None, None, "Model or class files missing from directory."
     
-  return model, class_names
+    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    
+    with open(CLASS_PATH, "r") as f:
+      class_names = json.load(f)
+      
+    return model, class_names, None
+  except Exception as e:
+    return None, None, str(e)
+
+
+# Always unpack three values to prevent any NameError
+model, class_names, load_error = load_model_and_classes()
 
 # Sidebar - Groq API Key Configuration
 st.sidebar.title("🌿 Agent Configuration")
@@ -56,8 +60,8 @@ st.write(
 
 if model is None or class_names is None:
   st.error(
-      f"⚠️ **Model files not found!** Please ensure `mobilenetv2_model.keras` and"
-      f" `class_names.json` are in your directory (`{BASE_DIR}`)."
+      f"⚠️ **Model loading failed!** Details: `{load_error}`\n\n"
+      f"Ensured files exist in: `{BASE_DIR}`"
   )
 else:
   uploaded_file = st.file_uploader(
