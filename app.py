@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
-# Explicitly initialize global variables to prevent any NameError scope issues
+# Explicitly initialize global variables
 model = None
 class_names = None
 load_error = None
@@ -29,29 +29,13 @@ def load_model_and_classes():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
       return None, None, "Model or class files missing from directory."
     
+    # Native Keras 3 loading compatible with your local training output
+    loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
-    num_classes = len(loaded_classes)
-
-    # 1. Rebuild the Sequential architecture matching local training
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(224, 224, 3), 
-        include_top=False, 
-        weights=None
-    )
-    
-    net = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dense(num_classes, activation="softmax")
-    ])
-
-    # 2. Build model and load weights
-    net.build((None, 224, 224, 3))
-    net.load_weights(MODEL_PATH)
-    
-    return net, loaded_classes, None
+    return loaded_model, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
 
