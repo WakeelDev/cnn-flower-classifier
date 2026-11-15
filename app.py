@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WEIGHTS_PATH = os.path.join(BASE_DIR, "model_weights.h5")
+MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.h5")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 model = None
@@ -24,34 +24,16 @@ load_error = None
 @st.cache_resource
 def load_model_and_classes():
   try:
-    if not os.path.exists(WEIGHTS_PATH) or not os.path.exists(CLASS_PATH):
-      return None, None, "Model weights or class files missing from directory."
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
+      return None, None, "Model or class files missing from directory."
+    
+    # Natively load the full patched .h5 model with all trained weights intact
+    loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
     
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
-    num_classes = len(loaded_classes)
-
-    # 1. Rebuild the exact 180x180 Sequential architecture used in training
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(180, 180, 3), 
-        include_top=False, 
-        weights=None
-    )
-    
-    net = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dense(num_classes, activation="softmax")
-    ])
-
-    # 2. Explicitly build model shape so all layer variables exist in memory
-    net.build((None, 180, 180, 3))
-
-    # 3. CRITICAL: Load weights by name so Keras maps them accurately to nested MobileNetV2 layers
-    net.load_weights(WEIGHTS_PATH, by_name=True, skip_mismatch=True)
-    
-    return net, loaded_classes, None
+    return loaded_model, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
 
