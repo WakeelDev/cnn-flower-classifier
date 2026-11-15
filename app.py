@@ -48,8 +48,8 @@ def load_model_and_classes():
     # 2. Explicitly build model shape so all layer variables exist in memory
     net.build((None, 180, 180, 3))
 
-    # 3. Load the raw weights sequentially—100% accurate, no JSON or layer name mismatch
-    net.load_weights(WEIGHTS_PATH)
+    # 3. CRITICAL: Load weights by name so Keras maps them accurately to nested MobileNetV2 layers
+    net.load_weights(WEIGHTS_PATH, by_name=True, skip_mismatch=True)
     
     return net, loaded_classes, None
   except Exception as e:
