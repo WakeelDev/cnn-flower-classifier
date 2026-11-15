@@ -29,7 +29,7 @@ def load_model_and_classes():
       
     num_classes = len(class_names)
 
-    # 1. Rebuild the exact Sequential architecture used during your local training
+    # 1. Rebuild the Sequential architecture
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(224, 224, 3), 
         include_top=False, 
@@ -42,17 +42,15 @@ def load_model_and_classes():
         tf.keras.layers.Dense(num_classes, activation="softmax")
     ])
 
-    # 2. Load the weights into the Sequential architecture
+    # 2. CRITICAL: Explicitly build the model so all layer variables are created in memory
+    model.build((None, 224, 224, 3))
+
+    # 3. Load the weights successfully
     model.load_weights(MODEL_PATH)
     
     return model, class_names, None
   except Exception as e:
     return None, None, str(e)
-
-
-# Unpack loader results
-model, class_names, load_error = load_model_and_classes()
-
 # Sidebar - Groq API Key Configuration
 st.sidebar.title("🌿 Agent Configuration")
 st.sidebar.markdown(
