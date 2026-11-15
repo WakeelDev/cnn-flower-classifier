@@ -12,12 +12,10 @@ st.set_page_config(
     page_title="Botanical AI & Flower Classifier", page_icon="🌸", layout="centered"
 )
 
-# Robust absolute path resolution for cloud deployment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
-# Explicitly initialize global variables
 model = None
 class_names = None
 load_error = None
@@ -29,18 +27,32 @@ def load_model_and_classes():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
       return None, None, "Model or class files missing from directory."
     
-    # Native Keras 3 loading compatible with your local training output
-    loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-    
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
-    return loaded_model, loaded_classes, None
+    num_classes = len(loaded_classes)
+
+    # Rebuild using the exact 180x180 shape your training used
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(180, 180, 3), 
+        include_top=False, 
+        weights=None
+    )
+    
+    net = tf.keras.Sequential([
+        base_model,
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(num_classes, activation="softmax")
+    ])
+
+    net.build((None, 180, 180, 3))
+    net.load_weights(MODEL_PATH)
+    
+    return net, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
 
 
-# Unpack loader results at the top global level
 model, class_names, load_error = load_model_and_classes()
 
 # Sidebar - Groq API Key Configuration
@@ -78,8 +90,8 @@ else:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Flower Image", use_column_width=True)
 
-    # Preprocess image for MobileNetV2 (224x224)
-    img_resized = image.resize((224, 224))
+    # Preprocess image for MobileNetV2 using 180x180
+    img_resized = image.resize((180, 180))
     img_array = np.array(img_resized)
     img_array = np.expand_dims(img_array, axis=0)
     img_array = preprocess_input(img_array.astype(float))
@@ -90,7 +102,6 @@ else:
       confidence = float(np.max(preds))
       predicted_class_idx = int(np.argmax(preds))
 
-      # Handle list or dict format for class_names
       if isinstance(class_names, list):
         predicted_class = class_names[predicted_class_idx]
       elif isinstance(class_names, dict):
@@ -100,7 +111,6 @@ else:
       else:
         predicted_class = str(predicted_class_idx)
 
-    # 50% Confidence Threshold & Uncertainty Gradient UI
     CONFIDENCE_THRESHOLD = 0.50
 
     st.markdown("---")
@@ -117,7 +127,6 @@ else:
       )
       display_class = "Unknown / Out-of-Distribution"
     else:
-      # Uncertainty Tiers
       if confidence >= 0.85:
         st.success(f"🟢 **High Confidence Tier** ({confidence * 100:.2f}%)")
       elif confidence >= 0.70:
