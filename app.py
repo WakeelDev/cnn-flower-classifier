@@ -22,14 +22,15 @@ CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 @st.cache_resource
 def load_model_and_classes():
-  if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
+  if not os.path.exists(CLASS_PATH):
     return None, None
-  model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+
   with open(CLASS_PATH, "r") as f:
     class_names = json.load(f)
-  return model, class_names
 
-  # Re-instantiate the exact architecture cleanly to avoid deserialization crashes
+  num_classes = len(class_names)
+
+  # 1. Cleanly build the exact MobileNetV2 architecture in memory
   base_model = MobileNetV2(
       input_shape=(224, 224, 3), include_top=False, weights=None
   )
@@ -38,13 +39,14 @@ def load_model_and_classes():
   outputs = Dense(num_classes, activation="softmax")(x)
   model = Model(inputs=base_model.input, outputs=outputs)
 
-  # Load only the weights safely
+  # 2. Load ONLY the weights. This completely bypasses container deserialization,
+  # configuration schemas, and environment-based version crashes.
   if os.path.exists(MODEL_PATH):
     try:
       model.load_weights(MODEL_PATH)
-    except Exception:
-      # Fallback if it was saved as a full model container
-      model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    except Exception as e:
+      st.error(f"Weight loading failed: {e}")
+      return None, None
 
   return model, class_names
 
