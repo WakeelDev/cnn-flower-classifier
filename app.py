@@ -1,6 +1,9 @@
 import json
 import os
 import tensorflow as tf
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.models import Model
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import numpy as np
 from PIL import Image
@@ -12,7 +15,6 @@ st.set_page_config(
     page_title="Botanical AI & Flower Classifier", page_icon="🌸", layout="centered"
 )
 
-# Robust absolute path resolution for cloud deployment
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
@@ -20,11 +22,31 @@ CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 @st.cache_resource
 def load_model_and_classes():
-  if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
+  if not os.path.exists(CLASS_PATH):
     return None, None
-  model = tf.keras.models.load_model(MODEL_PATH)
+  
   with open(CLASS_PATH, "r") as f:
     class_names = json.load(f)
+  
+  num_classes = len(class_names)
+
+  # Re-instantiate the exact architecture cleanly to avoid deserialization crashes
+  base_model = MobileNetV2(
+      input_shape=(224, 224, 3), include_top=False, weights=None
+  )
+  x = base_model.output
+  x = GlobalAveragePooling2D()(x)
+  outputs = Dense(num_classes, activation="softmax")(x)
+  model = Model(inputs=base_model.input, outputs=outputs)
+
+  # Load only the weights safely
+  if os.path.exists(MODEL_PATH):
+    try:
+      model.load_weights(MODEL_PATH)
+    except Exception:
+      # Fallback if it was saved as a full model container
+      model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+
   return model, class_names
 
 
