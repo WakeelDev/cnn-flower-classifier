@@ -22,36 +22,16 @@ CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 @st.cache_resource
 def load_model_and_classes():
-  if not os.path.exists(CLASS_PATH):
+  if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
     return None, None
-
+  
+  # Load the full .keras model container directly
+  model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+  
   with open(CLASS_PATH, "r") as f:
     class_names = json.load(f)
-
-  num_classes = len(class_names)
-
-  # 1. Cleanly build the exact MobileNetV2 architecture in memory
-  base_model = MobileNetV2(
-      input_shape=(224, 224, 3), include_top=False, weights=None
-  )
-  x = base_model.output
-  x = GlobalAveragePooling2D()(x)
-  outputs = Dense(num_classes, activation="softmax")(x)
-  model = Model(inputs=base_model.input, outputs=outputs)
-
-  # 2. Load ONLY the weights. This completely bypasses container deserialization,
-  # configuration schemas, and environment-based version crashes.
-  if os.path.exists(MODEL_PATH):
-    try:
-      model.load_weights(MODEL_PATH)
-    except Exception as e:
-      st.error(f"Weight loading failed: {e}")
-      return None, None
-
+    
   return model, class_names
-
-
-model, class_names = load_model_and_classes()
 
 # Sidebar - Groq API Key Configuration
 st.sidebar.title("🌿 Agent Configuration")
