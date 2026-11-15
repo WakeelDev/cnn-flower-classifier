@@ -22,13 +22,12 @@ CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 @st.cache_resource
 def load_model_and_classes():
-  if not os.path.exists(CLASS_PATH):
+  if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
     return None, None
-  
+  model = tf.keras.models.load_model(MODEL_PATH, compile=False)
   with open(CLASS_PATH, "r") as f:
     class_names = json.load(f)
-  
-  num_classes = len(class_names)
+  return model, class_names
 
   # Re-instantiate the exact architecture cleanly to avoid deserialization crashes
   base_model = MobileNetV2(
