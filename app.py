@@ -27,31 +27,16 @@ def load_model_and_classes():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
       return None, None, "Model or class files missing from directory."
     
+    # CRITICAL: safe_mode=False allows Keras 3 to unpack the full .keras container 
+    # without throwing deserialization or custom layer security blocks.
+    loaded_model = tf.keras.models.load_model(
+        MODEL_PATH, compile=False, safe_mode=False
+    )
+    
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
-    num_classes = len(loaded_classes)
-
-    # 1. Rebuild the exact 180x180 Sequential architecture used in local training
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(180, 180, 3), 
-        include_top=False, 
-        weights=None
-    )
-    
-    net = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dense(num_classes, activation="softmax")
-    ])
-
-    # 2. Build the model shape in memory
-    net.build((None, 180, 180, 3))
-
-    # 3. Load Keras 3 weights directly, bypassing JSON deserialization bugs
-    net.load_weights(MODEL_PATH)
-    
-    return net, loaded_classes, None
+    return loaded_model, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
 
@@ -93,7 +78,8 @@ else:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Flower Image", use_column_width=True)
 
-    # Preprocess image for MobileNetV2 using 180x180
+    # Preprocess image for MobileNetV2 (Note: MobileNetV2 preprocessing works universally, 
+    # but resize to whatever dimension your model expects, e.g., 180x180 or 224x224)
     img_resized = image.resize((180, 180))
     img_array = np.array(img_resized)
     img_array = np.expand_dims(img_array, axis=0)
