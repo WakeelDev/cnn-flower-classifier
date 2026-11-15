@@ -24,17 +24,33 @@ def load_model_and_classes():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
       return None, None, "Model or class files missing from directory."
     
-    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-    
     with open(CLASS_PATH, "r") as f:
       class_names = json.load(f)
       
+    num_classes = len(class_names)
+
+    # 1. Rebuild the exact Sequential architecture used during your local training
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(224, 224, 3), 
+        include_top=False, 
+        weights=None
+    )
+    
+    model = tf.keras.Sequential([
+        base_model,
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(num_classes, activation="softmax")
+    ])
+
+    # 2. Load the weights into the Sequential architecture
+    model.load_weights(MODEL_PATH)
+    
     return model, class_names, None
   except Exception as e:
     return None, None, str(e)
 
 
-# Always unpack three values to prevent any NameError
+# Unpack loader results
 model, class_names, load_error = load_model_and_classes()
 
 # Sidebar - Groq API Key Configuration
