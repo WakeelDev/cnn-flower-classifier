@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.h5")
+WEIGHTS_PATH = os.path.join(BASE_DIR, "model_weights.h5")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 model = None
@@ -24,15 +24,15 @@ load_error = None
 @st.cache_resource
 def load_model_and_classes():
   try:
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
-      return None, None, "Model or class files missing from directory."
+    if not os.path.exists(WEIGHTS_PATH) or not os.path.exists(CLASS_PATH):
+      return None, None, "Model weights or class files missing from directory."
     
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
     num_classes = len(loaded_classes)
 
-    # 1. Rebuild the exact 180x180 Sequential architecture programmatically
+    # 1. Rebuild the exact 180x180 Sequential architecture used in training
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(180, 180, 3), 
         include_top=False, 
@@ -45,12 +45,11 @@ def load_model_and_classes():
         tf.keras.layers.Dense(num_classes, activation="softmax")
     ])
 
-    # 2. Explicitly build the model so all layer variables are instantiated in memory
+    # 2. Explicitly build model shape so all layer variables exist in memory
     net.build((None, 180, 180, 3))
 
-    # 3. Load weights by name from the .h5 file — completely bypassing 
-    # the broken JSON config deserialization and the 'axis: [3]' list crash!
-    net.load_weights(MODEL_PATH, by_name=True, skip_mismatch=True)
+    # 3. Load the raw weights sequentially—100% accurate, no JSON or layer name mismatch
+    net.load_weights(WEIGHTS_PATH)
     
     return net, loaded_classes, None
   except Exception as e:
