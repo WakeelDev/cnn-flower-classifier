@@ -1,0 +1,8 @@
+# Environment & Secrets
+.env
+.DS_Store
+
+# Dataset & Caches (Too large for GitHub & unnecessary for deployment)
+images/
+__pycache__/
+.vscode/
