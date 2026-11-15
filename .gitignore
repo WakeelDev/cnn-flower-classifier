@@ -2,7 +2,7 @@
 .env
 .DS_Store
 
-# Dataset & Caches (Too large for GitHub & unnecessary for deployment)
+# Dataset & Caches (Keep mobilenetv2_model.keras un-ignored!)
 images/
 __pycache__/
 .vscode/
