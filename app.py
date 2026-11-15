@@ -32,7 +32,7 @@ def load_model_and_classes():
       
     num_classes = len(loaded_classes)
 
-    # Rebuild using the exact 180x180 shape your training used
+    # 1. Rebuild the exact 180x180 Sequential architecture used in local training
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(180, 180, 3), 
         include_top=False, 
@@ -45,7 +45,10 @@ def load_model_and_classes():
         tf.keras.layers.Dense(num_classes, activation="softmax")
     ])
 
+    # 2. Build the model shape in memory
     net.build((None, 180, 180, 3))
+
+    # 3. Load Keras 3 weights directly, bypassing JSON deserialization bugs
     net.load_weights(MODEL_PATH)
     
     return net, loaded_classes, None
