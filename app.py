@@ -13,7 +13,8 @@ st.set_page_config(
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.keras")
+# Point to the clean legacy .h5 model file
+MODEL_PATH = os.path.join(BASE_DIR, "mobilenetv2_model.h5")
 CLASS_PATH = os.path.join(BASE_DIR, "class_names.json")
 
 model = None
@@ -27,31 +28,13 @@ def load_model_and_classes():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(CLASS_PATH):
       return None, None, "Model or class files missing from directory."
     
+    # Legacy .h5 files load natively without Keras 3 deserialization or safe_mode crashes
+    loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    
     with open(CLASS_PATH, "r") as f:
       loaded_classes = json.load(f)
       
-    num_classes = len(loaded_classes)
-
-    # 1. Rebuild the exact 180x180 Sequential architecture used during local training
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(180, 180, 3), 
-        include_top=False, 
-        weights=None
-    )
-    
-    net = tf.keras.Sequential([
-        base_model,
-        tf.keras.layers.GlobalAveragePooling2D(),
-        tf.keras.layers.Dense(num_classes, activation="softmax")
-    ])
-
-    # 2. Build the model shape in memory so layer variables exist
-    net.build((None, 180, 180, 3))
-
-    # 3. CRITICAL: Load weights by name, bypassing JSON deserialization bugs entirely
-    net.load_weights(MODEL_PATH, by_name=True, skip_mismatch=True)
-    
-    return net, loaded_classes, None
+    return loaded_model, loaded_classes, None
   except Exception as e:
     return None, None, str(e)
 
@@ -93,7 +76,7 @@ else:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Flower Image", use_column_width=True)
 
-    # Preprocess image for MobileNetV2 using 180x180
+    # Preprocess image for MobileNetV2 (180x180 based on your training shape)
     img_resized = image.resize((180, 180))
     img_array = np.array(img_resized)
     img_array = np.expand_dims(img_array, axis=0)
